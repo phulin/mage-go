@@ -326,21 +326,39 @@ func MageEncodeDecisionSpec(
 		if scratch.decisionType == decTypeDeclareBlockers && scratch.nBlockers > 0 && scratch.nAttackers > 0 {
 			nB := scratch.nBlockers
 			nA := scratch.nAttackers
-			bitmapNB[batchIdx] = nB
-			bitmapNA[batchIdx] = nA
-			// Capture into state (Go-owned copy) for nextMask use.
+			// Capture into state (Go-owned copy) for nextMask use — full,
+			// pre-clip shape so masking still sees every blocker/attacker.
 			row.legalEdgeBitmap = make([]byte, len(scratch.legalEdgeBitmap))
 			copy(row.legalEdgeBitmap, scratch.legalEdgeBitmap)
-			// Write into output buffer if shape fits.
-			if bitmap != nil && int64(nB) <= nBlk && int64(nA) <= nAtk {
+			// Clip writes into the output buffer to the preallocated shape,
+			// mirroring the spec_tokens / anchors clip above: callers see
+			// truncated counts and a non-fatal overflow flag rather than an
+			// all-zero row. If the caller didn't allocate a bitmap buffer
+			// (``bitmap == nil``) we still report the raw blocker/attacker
+			// counts so callers reading those arrays aren't misled into
+			// thinking the row had none.
+			if bitmap == nil {
+				bitmapNB[batchIdx] = nB
+				bitmapNA[batchIdx] = nA
+			} else {
+				writeB := nB
+				writeA := nA
+				if int64(writeB) > nBlk {
+					writeB = int32(nBlk)
+					overflow = true
+				}
+				if int64(writeA) > nAtk {
+					writeA = int32(nAtk)
+					overflow = true
+				}
+				bitmapNB[batchIdx] = writeB
+				bitmapNA[batchIdx] = writeA
 				rowBase := batchIdx * nBlk * nAtk
-				for b := int32(0); b < nB; b++ {
-					for a := int32(0); a < nA; a++ {
+				for b := int32(0); b < writeB; b++ {
+					for a := int32(0); a < writeA; a++ {
 						bitmap[rowBase+int64(b)*nAtk+int64(a)] = scratch.legalEdgeBitmap[int(b)*int(nA)+int(a)]
 					}
 				}
-			} else if bitmap != nil {
-				overflow = true
 			}
 		}
 	}
