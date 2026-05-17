@@ -12,6 +12,9 @@ import (
 	"unsafe"
 )
 
+// tokenTableMaxDictEntries mirrors magic_ai/text_encoder/tokenizer.py.
+const tokenTableMaxDictEntries = 512
+
 // tokenTables is the Go-side mirror of the Python TokenTables wire format.
 // Pointers are borrowed from Python; the underlying tensors must outlive any
 // code that reads them. Phase 4 of the assembler-port replaces the
@@ -82,17 +85,14 @@ type tokenTables struct {
 	cardNameToks []int32
 	cardNameOff  []int64
 
-	// v2 dedup. dictEntryIDs is one int32 per card row (the
-	// ``<dict-entry:R>`` token id) — used by the legacy row-keyed render-plan
-	// path. dictSlotIDs is one int32 per per-snapshot slot (the
-	// ``<dict-slot:S>`` token id) — used by the direct emitter so the model
-	// sees a slot index that's reassigned per snapshot in insertion order
-	// rather than a stable per-card identity. NULL/empty when v2 is disabled.
+	// v2 dedup. dictEntryIDs is one int32 per sequence-local dict slot
+	// (``<dict-entry:D>``). Slots are reassigned per snapshot in dictionary
+	// order; they are not stable card-row identities. NULL/empty when v2 is
+	// disabled.
 	dictOpenID   int32
 	dictCloseID  int32
 	cardOpenID   int32
 	dictEntryIDs []int32
-	dictSlotIDs  []int32
 
 	// Singletons used by the Go emitter for byte-equal parity with the
 	// Python emit_render_plan path. ``selfID`` / ``oppID`` are written
@@ -413,10 +413,14 @@ func registerTokenTables(c *C.MageTokenTables) error {
 		return err
 	}
 
-	// dict_entry_ids is sized rowCount (one entry per card row), or NULL
-	// when v2 dedup is disabled. The native side never indexes past
-	// rowCount, so the same length bound is safe.
-	t.dictEntryIDs = sliceI32(c.dict_entry_ids, rowCount)
+	// dict_entry_ids is a sequence-local slot table, not a card-row table.
+	// The current tokenizer exports MAX_DICT_ENTRIES entries; older ABIs do
+	// not carry an explicit length, so cap the borrowed slice to that bound.
+	dictEntryCount := rowCount
+	if dictEntryCount > tokenTableMaxDictEntries {
+		dictEntryCount = tokenTableMaxDictEntries
+	}
+	t.dictEntryIDs = sliceI32(c.dict_entry_ids, dictEntryCount)
 
 	tokenTablesMu.Lock()
 	currentTokenTables = t

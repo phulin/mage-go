@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
@@ -240,6 +241,33 @@ func TestDirectTokenEncodeSharedDirtyAcrossScratches(t *testing.T) {
 				i, pos, rowSpanEnd,
 			)
 		}
+	}
+}
+
+func TestDirectTokenEncodeDedupUsesSequenceLocalDictEntry(t *testing.T) {
+	defer directTestSetUp(t)()
+	cfg := directTestCfg()
+	view := directTestAllocOutputs(cfg)
+	scratch := newEncodeScratch()
+	scratch.reset()
+	state, pending := directTestState(1, "DirtyTestLarge")
+	dirty := &directDirtyState{}
+
+	if _, _, err := fillTokenAssemblyDirectPacked(
+		0, 0, state, pending, 0, cfg, view, scratch, dirty,
+	); err != nil {
+		t.Fatalf("fillTokenAssemblyDirectPacked: %s", err.message)
+	}
+	tables := getTokenTables()
+	if tables == nil || len(tables.dictEntryIDs) < 3 {
+		t.Fatalf("test token tables missing dict entries")
+	}
+	tokens := view.packedTokenIDs[:view.packedSeqLengths[0]]
+	if !slices.Contains(tokens, tables.dictEntryIDs[0]) {
+		t.Fatalf("tokens missing sequence-local dict entry 0 (%d): %v", tables.dictEntryIDs[0], tokens)
+	}
+	if slices.Contains(tokens, tables.dictEntryIDs[2]) {
+		t.Fatalf("tokens used persistent row-keyed dict entry 2 (%d): %v", tables.dictEntryIDs[2], tokens)
 	}
 }
 

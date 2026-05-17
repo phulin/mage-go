@@ -146,7 +146,7 @@ var testRenderPlanArity = map[int32]int{
 	opTarget:       3,
 	opOpenDict:     0,
 	opCloseDict:    0,
-	opDictEntry:    1,
+	opDictEntry:    2,
 	opPlaceCardRef: 4,
 	opCount:        1,
 	opStackOpen:    0,

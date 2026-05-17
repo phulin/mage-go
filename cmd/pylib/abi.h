@@ -255,11 +255,11 @@ typedef struct {
     const int64_t* card_name_offsets;
 
     /* v2 card-body deduplication. The dict-entry table is one int32 per
-       cache row (the ``<dict-entry:R>`` token id for row R), aligned to
-       ``card_row_count``. ``dict_open_id`` / ``dict_close_id`` /
-       ``card_open_id`` are the singleton ids for ``<dict>`` / ``</dict>`` /
-       ``<card>``. All zero (and dict_entry_ids = NULL) is acceptable when
-       ``cfg.dedup_card_bodies`` is never set. */
+       sequence-local dictionary slot (``<dict-entry:D>``), not one per card
+       row. ``dict_open_id`` / ``dict_close_id`` / ``card_open_id`` are the
+       singleton ids for ``<dict>`` / ``</dict>`` / ``<card>``. All zero (and
+       dict_entry_ids = NULL) is acceptable when ``cfg.dedup_card_bodies`` is
+       never set. */
     int32_t dict_open_id;
     int32_t dict_close_id;
     int32_t card_open_id;

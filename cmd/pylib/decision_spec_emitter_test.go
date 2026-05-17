@@ -121,6 +121,48 @@ func TestEmitDecisionSpec_Priority(t *testing.T) {
 	}
 }
 
+func TestEmitDecisionSpec_PriorityDedupesPlaysAndSkipsManaAbilities(t *testing.T) {
+	ids := testSpecIDs()
+	out := newSpecOut()
+	pending := &apiPending{
+		Kind: "priority",
+		Options: []apiOption{
+			{Kind: "play", CardName: "Forest", Label: "Play Forest"},
+			{Kind: "play", CardName: "Forest", Label: "Play Forest"},
+			{Kind: "activate", CardName: "Forest", Label: "Forest - PlayerA adds {G}."},
+			{Kind: "activate", CardName: "Jayemdae Tome", Label: "Jayemdae Tome - Draw a card."},
+			{Kind: "pass", Label: "Pass priority"},
+		},
+	}
+	if err := emitDecisionSpec(pending, ids, out); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	want := []int32{
+		ids.specOpen, ids.decisionType, ids.dtName[decTypePriority],
+		ids.legalAction, ids.legalAction, ids.legalAction,
+		ids.specClose,
+	}
+	got := liveTokens(out)
+	if len(got) != len(want) {
+		t.Fatalf("token len: got %d want %d (got=%v)", len(got), len(want), got)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Fatalf("token[%d]: got %d want %d", i, got[i], w)
+		}
+	}
+	anchors := liveAnchors(out)
+	if len(anchors) != 3 {
+		t.Fatalf("anchor count: got %d want 3", len(anchors))
+	}
+	wantHandles := []int32{0, 3, 4}
+	for i, a := range anchors {
+		if a.kind != anchorLegalAction || a.subjectIndex != int32(i) || a.handle != wantHandles[i] {
+			t.Fatalf("anchor[%d]: %+v", i, a)
+		}
+	}
+}
+
 func TestEmitDecisionSpec_DeclareAttackers(t *testing.T) {
 	ids := testSpecIDs()
 	out := newSpecOut()

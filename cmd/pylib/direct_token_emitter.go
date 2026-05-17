@@ -366,16 +366,14 @@ func (e *directTokenEmitter) emitPlaceCard(row, status, uuidIdx int32) {
 }
 
 // emitPlaceCardRef writes a placement that points back at the dict prologue.
-// Prefer per-snapshot slot ids when present; older Python token-table ABIs
-// only provide row-keyed dict-entry ids, so fall back to those.
 func (e *directTokenEmitter) emitPlaceCardRef(slot, row, status, uuidIdx int32) {
 	e.closeScalarOwner()
 	e.emitCardRef(uuidIdx)
 	e.writeSingle(e.tables.cardOpenID)
-	if slot >= 0 && slot < int32(len(e.tables.dictSlotIDs)) {
-		e.writeSingle(e.tables.dictSlotIDs[slot])
-	} else if row >= 0 && row < int32(len(e.tables.dictEntryIDs)) {
-		e.writeSingle(e.tables.dictEntryIDs[row])
+	if slot >= 0 && slot < int32(len(e.tables.dictEntryIDs)) {
+		e.writeSingle(e.tables.dictEntryIDs[slot])
+	} else if row >= 0 && row < e.tables.cardRowCount {
+		e.writeSpan(e.tables.cardBodySpan(row))
 	}
 	e.emitStatus(status)
 	e.writeSpan(e.tables.cardCloser)
@@ -404,15 +402,14 @@ func (e *directTokenEmitter) emitCloseDict() {
 }
 
 // emitDictEntry writes one entry in the per-snapshot dict prologue. slot
-// indexes into the slot-keyed dictSlotIDs (per-snapshot, reassigned every
-// state); row indexes into the stable card-body table for the body splice.
+// indexes into the sequence-local dict-entry table; row indexes into the
+// stable card-body table for the body splice.
 func (e *directTokenEmitter) emitDictEntry(slot, row int32) {
 	e.closeScalarOwner()
-	if slot >= 0 && slot < int32(len(e.tables.dictSlotIDs)) {
-		e.writeSingle(e.tables.dictSlotIDs[slot])
-	} else if row >= 0 && row < int32(len(e.tables.dictEntryIDs)) {
-		e.writeSingle(e.tables.dictEntryIDs[row])
+	if slot < 0 || slot >= int32(len(e.tables.dictEntryIDs)) {
+		return
 	}
+	e.writeSingle(e.tables.dictEntryIDs[slot])
 	if row >= 0 && row < e.tables.cardRowCount {
 		e.writeSpan(e.tables.cardBodySpan(row))
 	}

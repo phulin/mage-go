@@ -91,7 +91,7 @@ var opcodeArityArr = [...]int8{
 	opCloseRawCard:  0,
 	opOpenDict:      0,
 	opCloseDict:     0,
-	opDictEntry:     1,
+	opDictEntry:     2,
 	opPlaceCardRef:  4,
 	opCount:         1,
 	opStackOpen:     0,
@@ -596,10 +596,13 @@ func assembleTokensFromPlan(
 			i++
 			continue
 		case opDictEntry:
-			row := plan[i+1]
-			if row >= 0 && row < int32(len(tables.dictEntryIDs)) {
-				writeSingle(tables.dictEntryIDs[row])
+			slot := plan[i+1]
+			row := plan[i+2]
+			if slot < 0 || slot >= int32(len(tables.dictEntryIDs)) {
+				i += 1 + arity
+				continue
 			}
+			writeSingle(tables.dictEntryIDs[slot])
 			if row >= 0 && row < tables.cardRowCount {
 				writeSpan(tables.cardBodySpan(row))
 			}
@@ -607,14 +610,16 @@ func assembleTokensFromPlan(
 			i += 1 + arity
 			continue
 		case opPlaceCardRef:
-			_ = plan[i+1] // slot_idx (unused)
+			slot := plan[i+1]
 			row := plan[i+2]
 			status := plan[i+3]
 			uuidIdx := plan[i+4]
 			emitCardRef(uuidIdx)
 			writeSingle(tables.cardOpenID)
-			if row >= 0 && row < int32(len(tables.dictEntryIDs)) {
-				writeSingle(tables.dictEntryIDs[row])
+			if slot >= 0 && slot < int32(len(tables.dictEntryIDs)) {
+				writeSingle(tables.dictEntryIDs[slot])
+			} else if row >= 0 && row < tables.cardRowCount {
+				writeSpan(tables.cardBodySpan(row))
 			}
 			if status&statusTappedKnown != 0 {
 				if status&0x0001 != 0 {

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/google/uuid"
 )
 
@@ -139,6 +141,46 @@ func pendingKindToDecisionType(kind string) (decisionType, bool) {
 	return decTypeNone, false
 }
 
+func canonicalPriorityOptionIndices(options []apiOption) []int {
+	out := make([]int, 0, len(options))
+	seen := make(map[string]struct{}, len(options))
+	for idx, option := range options {
+		if isManaAbilityOption(option) {
+			continue
+		}
+		key := priorityOptionDedupeKey(option)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, idx)
+	}
+	return out
+}
+
+func isManaAbilityOption(option apiOption) bool {
+	kind := strings.ToLower(option.Kind)
+	if strings.Contains(kind, "mana") {
+		return true
+	}
+	if kind != "activate" {
+		return false
+	}
+	label := strings.ToLower(option.Label)
+	return strings.Contains(label, " add {") ||
+		strings.Contains(label, " adds {") ||
+		strings.Contains(label, ": add ") ||
+		strings.Contains(label, " add mana") ||
+		strings.Contains(label, " adds mana")
+}
+
+func priorityOptionDedupeKey(option apiOption) string {
+	if strings.HasPrefix(option.Kind, "play") {
+		return option.Kind + "\t" + option.CardName
+	}
+	return option.Kind + "\t" + option.CardName + "\t" + option.Label
+}
+
 // emitDecisionSpec writes one row's worth of spec tokens + anchors + side-
 // tensors into out. Mirrors magic_ai/text_encoder/render_spec.py::DecisionSpecRenderer.render
 // for the v1 anchor layout. Returns nil on success; an error means the
@@ -164,8 +206,8 @@ func emitDecisionSpec(pending *apiPending, ids *specTokenIDs, out *specEmitterOu
 
 	switch dt {
 	case decTypePriority:
-		for optIdx := range options {
-			out.anchor(anchorLegalAction, int32(optIdx), int32(optIdx))
+		for subjectIdx, optIdx := range canonicalPriorityOptionIndices(options) {
+			out.anchor(anchorLegalAction, int32(subjectIdx), int32(optIdx))
 			out.emit(ids.legalAction)
 		}
 
@@ -265,7 +307,7 @@ func emitDecisionSpec(pending *apiPending, ids *specTokenIDs, out *specEmitterOu
 	return nil
 }
 
-// emitDigits writes the BPE token id sequence for the integer “value“ by
+// emitDigits writes the BPE token id sequence for the integer value by
 // indexing into the precomputed digit-id table that Python uploads via
 // MageRegisterTokenTables (see MaxValueDigitTokenIDsBuf). Values out of
 // range fall back to a single digit-zero emission to preserve grammar

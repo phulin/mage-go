@@ -60,7 +60,7 @@ const (
 	opCloseRawCard
 	opOpenDict     // 21: opens the per-snapshot card-body dictionary
 	opCloseDict    // 22: closes the dictionary
-	opDictEntry    // 23: payload [row]; emit one dict entry (full body)
+	opDictEntry    // 23: payload [slot, row]; emit one dict entry (full body)
 	opPlaceCardRef // 24: payload [slot, row, status, uuid]; ref to dict entry
 	opCount        // 25: payload [N]; emit count[N] span (e.g. <library>{N})
 	opStackOpen    // 26: emit shared <stack>
@@ -299,8 +299,11 @@ func (idx *renderPlanIndex) ensureDictSparse(rowCount int32) {
 // dictSlotFor returns the per-snapshot slot for row, allocating a fresh one
 // (in insertion order) if row hasn't been seen yet. O(1) amortized.
 func (idx *renderPlanIndex) dictSlotFor(row int32) int32 {
-	if row < 0 || int(row) >= len(idx.dictSlotByRow) {
+	if row < 0 {
 		return -1
+	}
+	if int(row) >= len(idx.dictSlotByRow) {
+		idx.ensureDictSparse(row + 1)
 	}
 	s := idx.dictSlotByRow[row]
 	if s >= 0 && int(s) < len(idx.dictRowOrder) && idx.dictRowOrder[s] == row {
@@ -334,10 +337,10 @@ func fillRenderPlan(batchIdx int64, state *apiGameState, pending *apiPending, pl
 
 	w := renderPlanWriter{buf: plan}
 	w.write(opOpenState)
-	if cfg.dedupCardBodies && len(index.rowOrder) > 0 {
+	if cfg.dedupCardBodies && len(index.dictRowOrder) > 0 {
 		w.write(opOpenDict)
-		for _, row := range index.rowOrder {
-			w.write(opDictEntry, row)
+		for slot, row := range index.dictRowOrder {
+			w.write(opDictEntry, int32(slot), row)
 		}
 		w.write(opCloseDict)
 	}
@@ -677,7 +680,7 @@ func emitRenderZones(w *renderPlanWriter, state *apiGameState, playerIdx int, in
 				// v2: ref the dict entry, no body splice. Per-card counter /
 				// attached_to are skipped to match the Python emitter, which
 				// does not emit them in dedup mode.
-				w.write(opPlaceCardRef, card.slotIdx, card.row, status, card.uuidIdx)
+				w.write(opPlaceCardRef, card.dictSlot, card.row, status, card.uuidIdx)
 				continue
 			}
 			w.write(opPlaceCard, card.slotIdx, card.row, status, card.uuidIdx)

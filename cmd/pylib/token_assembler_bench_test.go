@@ -121,13 +121,13 @@ func benchTokenTables() *tokenTables {
 	t.cardCloser = []int32{9400, 9401}
 	t.statusTapped = []int32{9500}
 	t.statusUntapped = []int32{9501}
-	t.dictEntryIDs = make([]int32, t.cardRowCount)
+	dictEntries := int(t.cardRowCount)
+	if dictEntries > tokenTableMaxDictEntries {
+		dictEntries = tokenTableMaxDictEntries
+	}
+	t.dictEntryIDs = make([]int32, dictEntries)
 	for i := range t.dictEntryIDs {
 		t.dictEntryIDs[i] = 110000 + int32(i)
-	}
-	t.dictSlotIDs = make([]int32, t.cardRowCount)
-	for i := range t.dictSlotIDs {
-		t.dictSlotIDs[i] = 120000 + int32(i)
 	}
 	return t
 }
@@ -142,7 +142,7 @@ func benchPlan(rowSeed int) []int32 {
 	add(opOpenState)
 	add(opOpenDict)
 	for r := range int32(benchDictEntries) {
-		add(opDictEntry, r%benchCardRowCount)
+		add(opDictEntry, r%benchDictEntries, r%benchCardRowCount)
 	}
 	add(opCloseDict)
 
