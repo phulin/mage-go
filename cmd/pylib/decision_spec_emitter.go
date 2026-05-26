@@ -73,16 +73,16 @@ type pointerAnchor struct {
 // region; anchors[:anchorsLen] are the live anchors. nBlockers / nAttackers
 // shape legalEdgeBitmap (row-major bool, 0/1).
 type specEmitterOut struct {
-	tokens               []int32
-	tokensLen            int32
-	anchors              []pointerAnchor
-	anchorsLen           int32
+	tokens                []int32
+	tokensLen             int32
+	anchors               []pointerAnchor
+	anchorsLen            int32
 	choiceAnchorPositions []int32 // [decision_group, choice_col], -1 = pad/none
 	nDecisionGroups       int32
 	nChoiceCols           int32
-	maxValueDigits       []int32 // BPE digit-id table provided by Python; see below
-	maxValueDigitOffsets []int32
-	maxValueDigitMax     int32
+	maxValueDigits        []int32 // BPE digit-id table provided by Python; see below
+	maxValueDigitOffsets  []int32
+	maxValueDigitMax      int32
 	// Output side-tensor (DECLARE_BLOCKERS only).
 	legalEdgeBitmap []byte
 	nBlockers       int32
@@ -236,7 +236,7 @@ func emitDecisionSpec(pending *apiPending, ids *specTokenIDs, out *specEmitterOu
 				continue
 			}
 			out.emit(ids.legalAction)
-			for tgtIdx := range option.ValidTargets {
+			for range option.ValidTargets {
 				out.choiceAnchor(0, candidateCol)
 				out.emit(ids.legalTarget)
 				candidateCol++
