@@ -132,6 +132,9 @@ func (g *Game) RunStepWithPriority(step PhaseStep) {
 		g.effects.RemoveEndOfCombat()
 		g.effects.Apply(g)
 		g.combat.Reset()
+		if g.onSPRBoundary != nil {
+			g.onSPRBoundary(g, SPRBoundaryEndOfCombat)
+		}
 
 	case PostcombatMain:
 		g.doMainPhaseActions(false)

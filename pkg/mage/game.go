@@ -22,6 +22,13 @@ var (
 	ErrSorcerySpeed      = errors.New("can only activate at sorcery speed")
 )
 
+type SPRBoundaryKind int
+
+const (
+	SPRBoundaryClearStackNoTriggers SPRBoundaryKind = iota + 1
+	SPRBoundaryEndOfCombat
+)
+
 // ExiledCard tracks a card in exile along with metadata about why it was exiled.
 //
 // FaceDown: when true, the card is in exile face down (CR 707, 406.3). Its
@@ -233,6 +240,9 @@ type Game struct {
 	// BeforeStackResolve is called before the top of the stack is resolved
 	// during a priority round. Used by the interactive layer for logging.
 	beforeStackResolve func(g *Game)
+
+	// OnSPRBoundary is called when an SPR target boundary is reached.
+	onSPRBoundary func(g *Game, kind SPRBoundaryKind)
 
 	// OnDamageDealt is called after damage is dealt to a player or creature.
 	// sourceName is the name of the source card/permanent, targetName is the

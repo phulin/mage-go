@@ -132,6 +132,7 @@ extern char* MageTokenTableSummary(void);
 extern char* MageTokenTableLookup(int32_t kind, int32_t k0, int32_t k1);
 extern char* MageEncodeTimingSummary(int32_t reset);
 extern MageEncodeResult MageEncodeTokensPacked(MageBatchRequest* req, MageEncodeConfig* cfg, MageEncodeOutputs* out, MageTokenAssemblerConfig* tokCfg, MagePackedTokenAssemblerOutputs* packedOut);
+extern MageEncodeResult MageDrainSPRBoundaryTokensPacked(MageSprEventTokenRequest* req, MageEncodeConfig* cfg, MageTokenAssemblerConfig* tokCfg, MagePackedTokenAssemblerOutputs* packedOut, MageSprEventOutputs* sprOut);
 extern int64_t MagePendingPlayer(int64_t id);
 extern int64_t MageIsOver(int64_t id);
 extern char* MageWinner(int64_t id);

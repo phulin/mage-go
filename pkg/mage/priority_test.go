@@ -110,6 +110,42 @@ func TestRunPriorityRound_NilHandler(t *testing.T) {
 	g.runPriorityRound(false) // should not panic
 }
 
+func TestRunPriorityRound_SPRBoundaryOnClearStackNoTriggers(t *testing.T) {
+	g := newPriorityTestGame()
+	count := 0
+	var got SPRBoundaryKind
+	g.SetOnSPRBoundary(func(_ *Game, kind SPRBoundaryKind) {
+		count++
+		got = kind
+	})
+
+	g.runPriorityRound(false)
+
+	if count != 1 {
+		t.Fatalf("SPR boundary callback count = %d, want 1", count)
+	}
+	if got != SPRBoundaryClearStackNoTriggers {
+		t.Fatalf("SPR boundary kind = %v, want %v", got, SPRBoundaryClearStackNoTriggers)
+	}
+}
+
+func TestRunStepWithPriority_SPRBoundaryAtEndOfCombatTail(t *testing.T) {
+	g := newPriorityTestGame()
+	var got []SPRBoundaryKind
+	g.SetOnSPRBoundary(func(_ *Game, kind SPRBoundaryKind) {
+		got = append(got, kind)
+	})
+
+	g.RunStepWithPriority(EndCombat)
+
+	if len(got) != 2 {
+		t.Fatalf("SPR boundaries = %v, want clear-stack and end-combat", got)
+	}
+	if got[0] != SPRBoundaryClearStackNoTriggers || got[1] != SPRBoundaryEndOfCombat {
+		t.Fatalf("SPR boundaries = %v, want [%v %v]", got, SPRBoundaryClearStackNoTriggers, SPRBoundaryEndOfCombat)
+	}
+}
+
 func TestRunPriorityRound_ActionExecution(t *testing.T) {
 	g := newPriorityTestGame()
 	g.step = PrecombatMain // needed for land plays

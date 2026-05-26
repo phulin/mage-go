@@ -199,6 +199,9 @@ func (g *Game) runPriorityRound(mainPhase bool) {
 
 		// All players passed in succession
 		if g.stack.IsEmpty() {
+			if g.onSPRBoundary != nil {
+				g.onSPRBoundary(g, SPRBoundaryClearStackNoTriggers)
+			}
 			return // step proceeds
 		}
 

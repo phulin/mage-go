@@ -630,6 +630,9 @@ func (g *Game) SetAfterPriorityAction(f func(*Game, int, PriorityAction)) {
 // SetBeforeStackResolve sets the before-stack-resolve callback.
 func (g *Game) SetBeforeStackResolve(f func(*Game)) { g.beforeStackResolve = f }
 
+// SetOnSPRBoundary sets the callback invoked at SPR target boundaries.
+func (g *Game) SetOnSPRBoundary(f func(*Game, SPRBoundaryKind)) { g.onSPRBoundary = f }
+
 // SetOnDamageDealt sets the callback invoked after damage is dealt.
 func (g *Game) SetOnDamageDealt(f func(sourceName, targetName string, amount int, isCombat bool)) {
 	g.onDamageDealt = f

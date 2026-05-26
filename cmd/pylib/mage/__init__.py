@@ -103,6 +103,17 @@ typedef struct {
     int64_t error_code;
     char *error_message;
 } MageEncodeResult;
+typedef struct {
+    int64_t n;
+    const int64_t *handles;
+    int64_t max_rows;
+} MageSprEventTokenRequest;
+typedef struct {
+    int64_t *handle_index;
+    int64_t *event_kind;
+    int64_t *event_seq;
+    int64_t *perspective_player_idx;
+} MageSprEventOutputs;
 struct MageNewGame_return MageNewGame(char *cfgJSON);
 char *MageState(int64_t id);
 char *MageLegal(int64_t id);
@@ -236,6 +247,13 @@ MageEncodeResult MageEncodeTokensPacked(
     MageEncodeOutputs *out,
     MageTokenAssemblerConfig *tok_cfg,
     MagePackedTokenAssemblerOutputs *packed_out
+);
+MageEncodeResult MageDrainSPRBoundaryTokensPacked(
+    MageSprEventTokenRequest *req,
+    MageEncodeConfig *cfg,
+    MageTokenAssemblerConfig *tok_cfg,
+    MagePackedTokenAssemblerOutputs *packed_out,
+    MageSprEventOutputs *spr_out
 );
 
 typedef struct {

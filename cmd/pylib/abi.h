@@ -128,6 +128,19 @@ typedef struct {
 typedef struct {
     int64_t n;
     const int64_t* handles;
+    int64_t max_rows;
+} MageSprEventTokenRequest;
+
+typedef struct {
+    int64_t* handle_index;           /* [max_rows] index into request handles */
+    int64_t* event_kind;             /* [max_rows] 1=clear-stack-no-triggers, 2=end-of-combat */
+    int64_t* event_seq;              /* [max_rows] monotonically increasing per handle */
+    int64_t* perspective_player_idx; /* [max_rows] state perspective encoded for this row */
+} MageSprEventOutputs;
+
+typedef struct {
+    int64_t n;
+    const int64_t* handles;
     const int64_t* slot_ids;
     const int64_t* episode_ids;
     int64_t max_steps_per_game;

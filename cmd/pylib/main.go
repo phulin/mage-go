@@ -57,14 +57,23 @@ type playerChans struct {
 	choiceResps chan interactive.ChoiceResponse
 }
 
+type sprBoundaryEvent struct {
+	Kind  int64
+	Seq   int64
+	State *apiGameState
+}
+
 type handle struct {
-	mu       sync.Mutex
-	game     *mage.Game
-	players  [2]*interactive.HumanPlayer
-	chans    [2]playerChans
-	current  pending
-	done     bool
-	stateBuf *apiGameState // cached snapshotState; cleared on each Step
+	mu         sync.Mutex
+	game       *mage.Game
+	players    [2]*interactive.HumanPlayer
+	chans      [2]playerChans
+	current    pending
+	done       bool
+	stateBuf   *apiGameState // cached snapshotState; cleared on each Step
+	sprMu      sync.Mutex
+	sprEvents  []sprBoundaryEvent
+	nextSPRSeq int64
 }
 
 // cachedSnapshotState returns the cached game-state snapshot for the
@@ -75,6 +84,17 @@ func cachedSnapshotState(h *handle) *apiGameState {
 		h.stateBuf = snapshotState(h.game)
 	}
 	return h.stateBuf
+}
+
+func recordSPRBoundary(h *handle, kind mage.SPRBoundaryKind, g *mage.Game) {
+	h.sprMu.Lock()
+	defer h.sprMu.Unlock()
+	h.nextSPRSeq++
+	h.sprEvents = append(h.sprEvents, sprBoundaryEvent{
+		Kind:  int64(kind),
+		Seq:   h.nextSPRSeq,
+		State: snapshotState(g),
+	})
 }
 
 var (
@@ -1095,6 +1115,9 @@ func MageNewGame(cfgJSON *C.char) (id C.int64_t, resp *C.char) {
 		players: [2]*interactive.HumanPlayer{pA, pB},
 		chans:   [2]playerChans{chansA, chansB},
 	}
+	g.SetOnSPRBoundary(func(game *mage.Game, kind mage.SPRBoundaryKind) {
+		recordSPRBoundary(h, kind, game)
+	})
 	hid := putHandle(h)
 
 	channels := [2]interactive.PlayerChannels{
@@ -1808,6 +1831,121 @@ func MageEncodeTokensPacked(
 	rowsWritten, err := encodeBatchGo(reqGo, cfgGo, views)
 	if err != nil {
 		return newEncodeResult(rowsWritten, err.code, err.message)
+	}
+	return newEncodeResult(rowsWritten, mageEncodeErrOK, "")
+}
+
+//export MageDrainSPRBoundaryTokensPacked
+func MageDrainSPRBoundaryTokensPacked(
+	req *C.MageSprEventTokenRequest,
+	cfg *C.MageEncodeConfig,
+	tokCfg *C.MageTokenAssemblerConfig,
+	packedOut *C.MagePackedTokenAssemblerOutputs,
+	sprOut *C.MageSprEventOutputs,
+) (res C.MageEncodeResult) {
+	defer func() {
+		if r := recover(); r != nil {
+			res = newEncodeResult(
+				0,
+				mageEncodeErrEncodeFailure,
+				fmt.Sprintf("panic: %v\n%s", r, debug.Stack()),
+			)
+		}
+	}()
+	if req == nil || cfg == nil || tokCfg == nil || packedOut == nil || sprOut == nil {
+		return newEncodeResult(0, mageEncodeErrInvalidArgument, "req, cfg, tok_cfg, packed_out, spr_out must be non-nil")
+	}
+	if getTokenTables() == nil {
+		return newEncodeResult(0, mageEncodeErrInvalidArgument, "MageRegisterTokenTables must be called before MageDrainSPRBoundaryTokensPacked")
+	}
+	n := int64(req.n)
+	maxRows := int64(req.max_rows)
+	if n < 0 || maxRows < 0 {
+		return newEncodeResult(0, mageEncodeErrInvalidArgument, "req.n and req.max_rows must be non-negative")
+	}
+	if n == 0 || maxRows == 0 {
+		return newEncodeResult(0, mageEncodeErrOK, "")
+	}
+	if req.handles == nil {
+		return newEncodeResult(0, mageEncodeErrInvalidArgument, "req.handles must be non-nil when n > 0")
+	}
+	if sprOut.handle_index == nil || sprOut.event_kind == nil || sprOut.event_seq == nil || sprOut.perspective_player_idx == nil {
+		return newEncodeResult(0, mageEncodeErrInvalidArgument, "SPR event output pointers must be non-nil")
+	}
+
+	cfgGo := parseEncodeConfigC(cfg)
+	cfgGo.emitTokensPacked = true
+	cfgGo.emitRenderPlan = false
+	cfgGo.tokenMaxTokens = int32(tokCfg.max_tokens)
+	cfgGo.tokenMaxOptions = int32(tokCfg.max_options)
+	cfgGo.tokenMaxTargets = int32(tokCfg.max_targets)
+	cfgGo.tokenMaxCardRefs = int32(tokCfg.max_card_refs)
+	if cfgGo.tokenMaxTokens <= 0 || cfgGo.tokenMaxOptions <= 0 ||
+		cfgGo.tokenMaxTargets < 0 || cfgGo.tokenMaxCardRefs <= 0 {
+		return newEncodeResult(0, mageEncodeErrInvalidArgument, "token assembler config has non-positive dimension")
+	}
+	if err := validateEncodeConfig(cfgGo); err != nil {
+		return newEncodeResult(0, err.code, err.message)
+	}
+
+	views := outputViews{}
+	if err := attachPackedTokenViews(maxRows, cfgGo, packedOut, &views); err != nil {
+		return newEncodeResult(0, err.code, err.message)
+	}
+	handleIndexOut := unsafe.Slice((*int64)(unsafe.Pointer(sprOut.handle_index)), maxRows)
+	eventKindOut := unsafe.Slice((*int64)(unsafe.Pointer(sprOut.event_kind)), maxRows)
+	eventSeqOut := unsafe.Slice((*int64)(unsafe.Pointer(sprOut.event_seq)), maxRows)
+	perspectiveOut := unsafe.Slice((*int64)(unsafe.Pointer(sprOut.perspective_player_idx)), maxRows)
+	handles := unsafe.Slice((*int64)(unsafe.Pointer(req.handles)), n)
+	views.packedCuSeqlens[0] = 0
+
+	scratch := acquireScratch(scratchPoolKey(views))
+	defer releaseScratch(scratchPoolKey(views), scratch)
+	packedCursor := int32(0)
+	rowsWritten := int64(0)
+	for handleIdx, handleID := range handles {
+		h := getHandle(handleID)
+		if h == nil {
+			return newEncodeResult(rowsWritten, mageEncodeErrUnknownHandle, fmt.Sprintf("unknown handle %d", handleID))
+		}
+		for {
+			if rowsWritten+2 > maxRows {
+				return newEncodeResult(rowsWritten, mageEncodeErrOK, "")
+			}
+			h.sprMu.Lock()
+			if len(h.sprEvents) == 0 {
+				h.sprMu.Unlock()
+				break
+			}
+			ev := h.sprEvents[0]
+			for perspective := int64(0); perspective < 2; perspective++ {
+				scratch.reset()
+				var dirty directDirtyState
+				advanced, _, err := fillTokenAssemblyDirectPacked(
+					rowsWritten,
+					packedCursor,
+					ev.State,
+					nil,
+					int(perspective),
+					cfgGo,
+					views,
+					scratch,
+					&dirty,
+				)
+				if err != nil {
+					h.sprMu.Unlock()
+					return newEncodeResult(rowsWritten, err.code, err.message)
+				}
+				handleIndexOut[rowsWritten] = int64(handleIdx)
+				eventKindOut[rowsWritten] = ev.Kind
+				eventSeqOut[rowsWritten] = ev.Seq
+				perspectiveOut[rowsWritten] = perspective
+				packedCursor = advanced
+				rowsWritten++
+			}
+			h.sprEvents = h.sprEvents[1:]
+			h.sprMu.Unlock()
+		}
 	}
 	return newEncodeResult(rowsWritten, mageEncodeErrOK, "")
 }
