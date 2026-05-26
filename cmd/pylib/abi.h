@@ -326,11 +326,14 @@ typedef struct {
     int32_t* pointer_anchor_subjects; /* [B, N_anchors_max] int32 */
     int32_t* pointer_anchor_handles;  /* [B, N_anchors_max] int32 */
     int32_t* pointer_anchor_counts;   /* [B] int32 */
+    int32_t* decision_choice_anchor_positions; /* [B, N_decision_groups_max, N_choice_cols_max] int32, -1 = pad */
     uint8_t* legal_edge_bitmap;       /* [B, N_blockers_max, N_attackers_max] */
     int32_t* legal_edge_n_blockers;   /* [B] int32 */
     int32_t* legal_edge_n_attackers;  /* [B] int32 */
     int32_t  T_spec_max;
     int32_t  N_anchors_max;
+    int32_t  N_decision_groups_max;
+    int32_t  N_choice_cols_max;
     int32_t  N_blockers_max;
     int32_t  N_attackers_max;
     int32_t  spec_overflow;

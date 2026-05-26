@@ -247,11 +247,14 @@ typedef struct {
     int32_t *pointer_anchor_subjects;
     int32_t *pointer_anchor_handles;
     int32_t *pointer_anchor_counts;
+    int32_t *decision_choice_anchor_positions;
     uint8_t *legal_edge_bitmap;
     int32_t *legal_edge_n_blockers;
     int32_t *legal_edge_n_attackers;
     int32_t T_spec_max;
     int32_t N_anchors_max;
+    int32_t N_decision_groups_max;
+    int32_t N_choice_cols_max;
     int32_t N_blockers_max;
     int32_t N_attackers_max;
     int32_t spec_overflow;

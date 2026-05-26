@@ -39,8 +39,11 @@ func testSpecIDs() *specTokenIDs {
 // exercised end-to-end.
 func newSpecOut() *specEmitterOut {
 	out := &specEmitterOut{
-		tokens:  make([]int32, 1024),
-		anchors: make([]pointerAnchor, 256),
+		tokens:                make([]int32, 1024),
+		anchors:               make([]pointerAnchor, 256),
+		choiceAnchorPositions: make([]int32, 16*16),
+		nDecisionGroups:       16,
+		nChoiceCols:           16,
 	}
 	// Digit table: integer i maps to its single base-10 digit token id
 	// 9300 + d for d ∈ 0..9. For multi-digit ints, concat the MSB-first
@@ -75,6 +78,10 @@ func liveTokens(out *specEmitterOut) []int32 {
 
 func liveAnchors(out *specEmitterOut) []pointerAnchor {
 	return out.anchors[:out.anchorsLen]
+}
+
+func choiceAnchor(out *specEmitterOut, group, col int32) int32 {
+	return out.choiceAnchorPositions[group*out.nChoiceCols+col]
 }
 
 func TestEmitDecisionSpec_Priority(t *testing.T) {
@@ -118,6 +125,31 @@ func TestEmitDecisionSpec_Priority(t *testing.T) {
 		if a.tokenPosition != wantPos {
 			t.Fatalf("anchor[%d] pos: got %d want %d", i, a.tokenPosition, wantPos)
 		}
+	}
+	for col := int32(0); col < 3; col++ {
+		if got, want := choiceAnchor(out, 0, col), int32(3)+col; got != want {
+			t.Fatalf("choice anchor col %d: got %d want %d", col, got, want)
+		}
+	}
+}
+
+func TestEmitDecisionSpec_PriorityTargetedChoiceAnchors(t *testing.T) {
+	ids := testSpecIDs()
+	out := newSpecOut()
+	pending := &apiPending{
+		Kind: "priority",
+		Options: []apiOption{
+			{Kind: "cast_spell", ValidTargets: []apiTarget{{IDUUID: uuid.New()}, {IDUUID: uuid.New()}}},
+		},
+	}
+	if err := emitDecisionSpec(pending, ids, out); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	if got := liveTokens(out); got[3] != ids.legalAction || got[4] != ids.legalTarget || got[5] != ids.legalTarget {
+		t.Fatalf("targeted priority tokens: %v", got)
+	}
+	if choiceAnchor(out, 0, 0) == choiceAnchor(out, 0, 1) {
+		t.Fatalf("target candidates should have distinct anchors")
 	}
 }
 
@@ -200,6 +232,12 @@ func TestEmitDecisionSpec_DeclareAttackers(t *testing.T) {
 		if anchors[i].kind != anchorLegalAttacker || anchors[i].subjectIndex != int32(i) {
 			t.Fatalf("attacker anchor[%d]: %+v", i, anchors[i])
 		}
+		if got, want := choiceAnchor(out, int32(i), 1), int32(3+i); got != want {
+			t.Fatalf("attacker choice anchor[%d,1]: got %d want %d", i, got, want)
+		}
+		if got := choiceAnchor(out, int32(i), 0); got != -1 {
+			t.Fatalf("attacker none anchor[%d,0]: got %d want -1", i, got)
+		}
 	}
 	for i := range 2 {
 		a := anchors[2+i]
@@ -230,11 +268,12 @@ func TestEmitDecisionSpec_DeclareBlockers(t *testing.T) {
 		t.Fatalf("emit: %v", err)
 	}
 	// Expected token stream: open, dt, dt-name, blocker, blocker,
-	// attacker, attacker, close.
+	// attacker, attacker, legal target anchors for assignments, close.
 	wantTokens := []int32{
 		ids.specOpen, ids.decisionType, ids.dtName[decTypeDeclareBlockers],
 		ids.legalBlocker, ids.legalBlocker,
 		ids.legalAttacker, ids.legalAttacker,
+		ids.legalTarget, ids.legalTarget, ids.legalTarget,
 		ids.specClose,
 	}
 	got := liveTokens(out)
@@ -266,6 +305,12 @@ func TestEmitDecisionSpec_DeclareBlockers(t *testing.T) {
 	// 2 blocker anchors + 2 attacker anchors
 	if len(anchors) != 4 {
 		t.Fatalf("anchor count: got %d", len(anchors))
+	}
+	if got := choiceAnchor(out, 0, 0); got != -1 {
+		t.Fatalf("blocker none anchor: got %d want -1", got)
+	}
+	if choiceAnchor(out, 0, 1) < 0 || choiceAnchor(out, 0, 2) < 0 || choiceAnchor(out, 1, 1) < 0 {
+		t.Fatalf("missing blocker assignment anchors")
 	}
 }
 
@@ -330,6 +375,7 @@ func TestEmitDecisionSpec_ChooseMode(t *testing.T) {
 	// max_value = len(options) = 3 => digit token "3" => 9303
 	want := []int32{
 		ids.specOpen, ids.decisionType, ids.dtName[decTypeChooseMode],
+		ids.legalAction, ids.legalAction, ids.legalAction,
 		ids.maxValueOpen, 9303, ids.maxValueClose,
 		ids.specClose,
 	}

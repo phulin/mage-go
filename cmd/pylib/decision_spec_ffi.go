@@ -173,6 +173,8 @@ func MageEncodeDecisionSpec(
 
 	tSpec := int64(specOut.T_spec_max)
 	nAnchors := int64(specOut.N_anchors_max)
+	nGroups := int64(specOut.N_decision_groups_max)
+	nChoiceCols := int64(specOut.N_choice_cols_max)
 	nBlk := int64(specOut.N_blockers_max)
 	nAtk := int64(specOut.N_attackers_max)
 	if tSpec <= 0 || nAnchors <= 0 {
@@ -187,6 +189,13 @@ func MageEncodeDecisionSpec(
 	apSubj := unsafe.Slice((*int32)(unsafe.Pointer(specOut.pointer_anchor_subjects)), n*nAnchors)
 	apHand := unsafe.Slice((*int32)(unsafe.Pointer(specOut.pointer_anchor_handles)), n*nAnchors)
 	apCnt := unsafe.Slice((*int32)(unsafe.Pointer(specOut.pointer_anchor_counts)), n)
+	var choiceAnchors []int32
+	if specOut.decision_choice_anchor_positions != nil && nGroups > 0 && nChoiceCols > 0 {
+		choiceAnchors = unsafe.Slice(
+			(*int32)(unsafe.Pointer(specOut.decision_choice_anchor_positions)),
+			n*nGroups*nChoiceCols,
+		)
+	}
 	var bitmap []byte
 	if specOut.legal_edge_bitmap != nil && nBlk > 0 && nAtk > 0 {
 		bitmap = unsafe.Slice((*byte)(unsafe.Pointer(specOut.legal_edge_bitmap)), n*nBlk*nAtk)
@@ -219,6 +228,9 @@ func MageEncodeDecisionSpec(
 	for i := range apCnt {
 		apCnt[i] = 0
 	}
+	for i := range choiceAnchors {
+		choiceAnchors[i] = -1
+	}
 	for i := range bitmap {
 		bitmap[i] = 0
 	}
@@ -235,6 +247,9 @@ func MageEncodeDecisionSpec(
 	scratch := specEmitterOut{
 		tokens:               make([]int32, tSpec),
 		anchors:              make([]pointerAnchor, nAnchors),
+		choiceAnchorPositions: make([]int32, int(nGroups*nChoiceCols)),
+		nDecisionGroups:      int32(nGroups),
+		nChoiceCols:          int32(nChoiceCols),
 		maxValueDigits:       tokens.maxValueDigits,
 		maxValueDigitOffsets: tokens.maxValueDigitOffsets,
 		maxValueDigitMax:     tokens.maxValueDigitMax,
@@ -293,6 +308,14 @@ func MageEncodeDecisionSpec(
 			apHand[off] = a.handle
 		}
 		apCnt[batchIdx] = anchorLen
+		if choiceAnchors != nil {
+			base := batchIdx * nGroups * nChoiceCols
+			for i, pos := range scratch.choiceAnchorPositions {
+				if pos >= 0 {
+					choiceAnchors[base+int64(i)] = pos + stateLen
+				}
+			}
+		}
 
 		row := &state.rows[batchIdx]
 		row.decType = scratch.decisionType
@@ -495,6 +518,8 @@ func MagePackCombinedTokens(
 	cardRefsW := int(maxCardRefs)
 	tSpec := int(spec.T_spec_max)
 	nAnchors := int(spec.N_anchors_max)
+	nGroups := int(spec.N_decision_groups_max)
+	nChoiceCols := int(spec.N_choice_cols_max)
 
 	tokens := unsafe.Slice((*int32)(unsafe.Pointer(packed.token_ids)), int(tokenCapacity))
 	cu := unsafe.Slice((*int32)(unsafe.Pointer(packed.cu_seqlens)), nInt+1)
@@ -512,6 +537,13 @@ func MagePackCombinedTokens(
 	var anchorPos []int32
 	if nAnchors > 0 {
 		anchorPos = unsafe.Slice((*int32)(unsafe.Pointer(spec.pointer_anchor_positions)), nInt*nAnchors)
+	}
+	var choiceAnchorPos []int32
+	if spec.decision_choice_anchor_positions != nil && nGroups > 0 && nChoiceCols > 0 {
+		choiceAnchorPos = unsafe.Slice(
+			(*int32)(unsafe.Pointer(spec.decision_choice_anchor_positions)),
+			nInt*nGroups*nChoiceCols,
+		)
 	}
 
 	// Compute new combined cu_seqlens and check overflow before mutating.
@@ -562,6 +594,15 @@ func MagePackCombinedTokens(
 				v := anchorPos[base+i]
 				if v >= 0 {
 					anchorPos[base+i] = v + newStart
+				}
+			}
+		}
+		if len(choiceAnchorPos) > 0 {
+			base := b * nGroups * nChoiceCols
+			for i := 0; i < nGroups*nChoiceCols; i++ {
+				v := choiceAnchorPos[base+i]
+				if v >= 0 {
+					choiceAnchorPos[base+i] = v + newStart
 				}
 			}
 		}

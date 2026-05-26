@@ -77,6 +77,9 @@ type specEmitterOut struct {
 	tokensLen            int32
 	anchors              []pointerAnchor
 	anchorsLen           int32
+	choiceAnchorPositions []int32 // [decision_group, choice_col], -1 = pad/none
+	nDecisionGroups       int32
+	nChoiceCols           int32
 	maxValueDigits       []int32 // BPE digit-id table provided by Python; see below
 	maxValueDigitOffsets []int32
 	maxValueDigitMax     int32
@@ -91,6 +94,11 @@ type specEmitterOut struct {
 func (o *specEmitterOut) reset() {
 	o.tokensLen = 0
 	o.anchorsLen = 0
+	if len(o.choiceAnchorPositions) > 0 {
+		for i := range o.choiceAnchorPositions {
+			o.choiceAnchorPositions[i] = -1
+		}
+	}
 	o.nBlockers = 0
 	o.nAttackers = 0
 	o.decisionType = decTypeNone
@@ -118,6 +126,17 @@ func (o *specEmitterOut) anchor(kind anchorKind, subjectIndex, handle int32) {
 		handle:        handle,
 	}
 	o.anchorsLen++
+}
+
+func (o *specEmitterOut) choiceAnchor(group, col int32) {
+	if group < 0 || col < 0 || group >= o.nDecisionGroups || col >= o.nChoiceCols {
+		return
+	}
+	idx := group*o.nChoiceCols + col
+	if int(idx) >= len(o.choiceAnchorPositions) {
+		return
+	}
+	o.choiceAnchorPositions[idx] = o.tokensLen
 }
 
 // pendingKindToDecisionType mirrors render_spec.py's _PENDING_KIND_TO_DECISION_TYPE.
@@ -206,14 +225,28 @@ func emitDecisionSpec(pending *apiPending, ids *specTokenIDs, out *specEmitterOu
 
 	switch dt {
 	case decTypePriority:
+		candidateCol := int32(0)
 		for subjectIdx, optIdx := range canonicalPriorityOptionIndices(options) {
+			option := options[optIdx]
 			out.anchor(anchorLegalAction, int32(subjectIdx), int32(optIdx))
+			if len(option.ValidTargets) == 0 {
+				out.choiceAnchor(0, candidateCol)
+				out.emit(ids.legalAction)
+				candidateCol++
+				continue
+			}
 			out.emit(ids.legalAction)
+			for tgtIdx := range option.ValidTargets {
+				out.choiceAnchor(0, candidateCol)
+				out.emit(ids.legalTarget)
+				candidateCol++
+			}
 		}
 
 	case decTypeDeclareAttackers:
 		for optIdx := range options {
 			out.anchor(anchorLegalAttacker, int32(optIdx), int32(optIdx))
+			out.choiceAnchor(int32(optIdx), 1)
 			out.emit(ids.legalAttacker)
 		}
 		for playerIdx := range int32(2) {
@@ -264,12 +297,14 @@ func emitDecisionSpec(pending *apiPending, ids *specTokenIDs, out *specEmitterOu
 			clear(out.legalEdgeBitmap)
 		}
 		for blkIdx, opt := range options {
-			for _, t := range opt.ValidTargets {
+			for tgtIdx, t := range opt.ValidTargets {
 				if t.IDUUID == uuid.Nil {
 					continue
 				}
 				if atkIdx, ok := attackerIndex[t.IDUUID]; ok {
 					out.legalEdgeBitmap[int32(blkIdx)*nA+atkIdx] = 1
+					out.choiceAnchor(int32(blkIdx), int32(tgtIdx)+1)
+					out.emit(ids.legalTarget)
 				}
 			}
 		}
@@ -277,6 +312,7 @@ func emitDecisionSpec(pending *apiPending, ids *specTokenIDs, out *specEmitterOu
 	case decTypeChooseTargets:
 		for optIdx := range options {
 			out.anchor(anchorLegalTarget, int32(optIdx), int32(optIdx))
+			out.choiceAnchor(0, int32(optIdx))
 			out.emit(ids.legalTarget)
 		}
 
@@ -284,12 +320,20 @@ func emitDecisionSpec(pending *apiPending, ids *specTokenIDs, out *specEmitterOu
 		// Fixed grammar — no anchors, no body tokens.
 
 	case decTypeChooseMode:
+		for optIdx := range options {
+			out.choiceAnchor(0, int32(optIdx))
+			out.emit(ids.legalAction)
+		}
 		maxValue := int32(len(options))
 		out.emit(ids.maxValueOpen)
 		emitDigits(out, ids, maxValue)
 		out.emit(ids.maxValueClose)
 
 	case decTypeChooseX:
+		for optIdx := range options {
+			out.choiceAnchor(0, int32(optIdx))
+			out.emit(ids.legalAction)
+		}
 		// CHOOSE_X: prefer pending.Amount when set; otherwise use
 		// max(0, len(options)-1). Mirrors render_spec.py CHOOSE_X branch.
 		var maxValue int32
