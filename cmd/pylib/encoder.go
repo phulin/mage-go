@@ -269,7 +269,7 @@ func validateEncodeConfig(cfg encodeConfig) *encodeError {
 		return &encodeError{code: mageEncodeErrArg, message: "max_cached_choices must be >= max_options"}
 	case cfg.maxCachedChoices < cfg.maxTargetsPerOption+1:
 		return &encodeError{code: mageEncodeErrArg, message: "max_cached_choices must be >= max_targets_per_option + 1"}
-	case (cfg.emitRenderPlan || cfg.emitTokensPacked) && cfg.renderPlanCapacity <= 0:
+	case cfg.emitRenderPlan && cfg.renderPlanCapacity <= 0:
 		return &encodeError{code: mageEncodeErrArg, message: "render_plan_capacity must be positive when render-plan-backed token assembly is set"}
 	case cfg.renderPlanCapacity > math.MaxInt32:
 		return &encodeError{code: mageEncodeErrArg, message: "render_plan_capacity must fit in int32"}

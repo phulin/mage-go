@@ -130,6 +130,23 @@ func directTestAllocOutputs(cfg encodeConfig) outputViews {
 	}
 }
 
+func TestValidateEncodeConfigAllowsDirectPackedTokensWithoutRenderPlan(t *testing.T) {
+	cfg := directTestCfg()
+	cfg.maxCachedChoices = 8
+	cfg.zoneSlotCount = zoneSlotCount
+	cfg.gameInfoDim = gameInfoDim
+	cfg.optionScalarDim = optionScalarDim
+	cfg.targetScalarDim = targetScalarDim
+	cfg.decisionCapacity = 8
+	cfg.emitTokensPacked = true
+	cfg.emitRenderPlan = false
+	cfg.renderPlanCapacity = 0
+
+	if err := validateEncodeConfig(cfg); err != nil {
+		t.Fatalf("validateEncodeConfig: %s", err.message)
+	}
+}
+
 // runRotation invokes fillTokenAssemblyDirectPacked three times against
 // the SAME row 0 in “view“, alternating two scratches and two card
 // rosters. “dirtyForCall“ lets the caller decide whether each call gets
